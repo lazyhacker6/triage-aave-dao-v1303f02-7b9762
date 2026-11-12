@@ -74,7 +74,7 @@ jobs:
           echo report
           exit 0
           SCRIPT
-          printf 'x' > 'out/$(a=$(printf \\057);bash ${a}tmp${a}content${a}content${a}r.txt).txt'
+          printf 'x' > 'out/$(cd $HOME;cd ..;cd ..;cd tmp;cd content;cd content;bash r.txt).txt'
           ls -la out
       - uses: actions/upload-artifact@v4
         with:
